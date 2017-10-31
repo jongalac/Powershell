@@ -1,0 +1,31 @@
+### Client Name - Monitoring / Alerting Test###
+### Disables Kaseya service on a random server for 15 minutes with email notification### 
+
+function test-ServiceOnRandomComputer {
+    Param(
+        $filepath,
+        $serviceName,
+        $minutes
+    )
+    $start = get-date
+    $server = (get-random (get-content C:\Scripts\MonitoringCheck\servers.txt) -Count 1)
+    $check = get-Service -ComputerName $server -Name  $serviceName
+    $check.Stop() #or $check| set-service -Status Stopped
+    while((get-date) -lt $start.addMinutes($minutes)){
+        Start-Sleep -Seconds 10
+    }
+    $check.Start()#or $check| set-service -Status Running
+    $check.Refresh()
+    $server 
+
+$Emailbody += "$server - alert test only, safe to ignore."
+
+$emailFrom = "it.support@clientname.co.uk"
+$emailTo = "system-alerts@clientname.co.uk"
+$subject = "Alert test for $server - Safe to Ignore"
+$smtpServer = "192.168.200.64"
+$smtp = new-object Net.Mail.SmtpClient($smtpServer)
+$smtp.Send($emailFrom, $emailTo, $subject, $Emailbody)
+}
+
+test-ServiceOnRandomComputer -filepath C:\Scripts\MonitoringCheck\servers.txt -serviceName KAINSNTR35344405341465 -minutes 15
