@@ -1,0 +1,32 @@
+
+
+[System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") |
+
+  Out-Null
+$SqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS1")
+
+$SqlServer.AvailabilityGroups["CentralCTXAG1"].AvailabilityReplicas |
+
+  Where-Object {$_.Name -eq $SqlServer.Name} |
+
+  Select-Object Name,
+
+    Role,
+
+    OperationalState,
+
+    ConnectionState
+
+$SqlServerSec = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS2")
+
+$SqlServerSec.AvailabilityGroups["CentralCTXAG1"].AvailabilityReplicas |
+
+  Where-Object {$_.Name -eq $SqlServerSec.Name} |
+
+  Select-Object Name,
+
+    Role,
+
+    OperationalState,
+
+    ConnectionState
