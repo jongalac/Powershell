@@ -1,32 +1,71 @@
 
 
+$SqlAGCentral = "CentralCTXAG1"
+$SqlAGEast = "EastUS2CTXAG1"
+
+
+
+
 [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") |
 
-  Out-Null
-$SqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS1")
+Out-Null
 
-$SqlServer.AvailabilityGroups["CentralCTXAG1"].AvailabilityReplicas |
 
-  Where-Object {$_.Name -eq $SqlServer.Name} |
+$SqlServerCentral1 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS1")
+
+$SqlServerCentral1.AvailabilityGroups[$SqlAGCentral].AvailabilityReplicas |
+
+  Where-Object {$_.Name -eq $SqlServerCentral1.Name} |
 
   Select-Object Name,
 
-    Role,
+    #Role,
 
-    OperationalState,
+    #OperationalState,
 
     ConnectionState
 
-$SqlServerSec = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS2")
 
-$SqlServerSec.AvailabilityGroups["CentralCTXAG1"].AvailabilityReplicas |
+$SqlServerCentral2 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS2")
 
-  Where-Object {$_.Name -eq $SqlServerSec.Name} |
+$SqlServerCentral2.AvailabilityGroups[$SqlAGCentral].AvailabilityReplicas |
+
+  Where-Object {$_.Name -eq $SqlServerCentral2.Name} |
 
   Select-Object Name,
 
-    Role,
+    #Role,
 
-    OperationalState,
+    #OperationalState,
+
+    ConnectionState
+
+
+$SqlServerEast1 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-EASTUS2-1")
+
+$SqlServerEast1.AvailabilityGroups["EastUS2CTXAG1"].AvailabilityReplicas |
+
+  Where-Object {$_.Name -eq $SqlServerEast1.Name} |
+
+  Select-Object Name,
+
+    #Role,
+
+    #OperationalState,
+
+    ConnectionState
+
+
+$SqlServerEast2 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-EASTUS2-2")
+
+$SqlServerEast2.AvailabilityGroups["EastUS2CTXAG1"].AvailabilityReplicas |
+
+  Where-Object {$_.Name -eq $SqlServerEast2.Name} |
+
+  Select-Object Name,
+
+    #Role,
+
+    #OperationalState,
 
     ConnectionState
