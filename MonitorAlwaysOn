@@ -1,7 +1,4 @@
-###########################################################
-# Info: 
-
-###########################################################
+# Check the status of SQL AlwaysOn, if any health issues are found with availability or replication event ID 1501 is written to the application log. 
 
 
 ###########################################################
