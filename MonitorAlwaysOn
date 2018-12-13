@@ -1,5 +1,6 @@
 ###########################################################
-# Script Body 
+# Info: 
+
 ###########################################################
 
 
@@ -68,7 +69,7 @@ else
     $criticalReplicas = @($replicaResults | Where-Object { $_.HealthState -eq "Error" })
     $criticalDatabases = @($databaseResults | Where-Object { $_.HealthState -eq "Error" })
 
-    # If any objects are critical throw an error
+    # If any objects are critical write an error event to the applicaiton log
     if($groupIsCritical -or $criticalReplicas.Count -gt 0 -or $criticalDatabases.Count -gt 0)
     {
         Write-EventLog -EventId 1501 -LogName Application -Message "SQL-CENTRALUS1 Availability Group is down" -Source "SQLAlwaysOn" -EntryType Error     
