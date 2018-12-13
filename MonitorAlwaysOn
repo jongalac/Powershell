@@ -1,5 +1,6 @@
-# Check the status of SQL AlwaysOn, if any health issues are found with availability or replication event ID 1501 is written to the application log. 
+# Check the status of SQL AlwaysOn, if any health issues are found with availability or replication event ID 1501 is written to the application log 
 
+# Example - SqlServerAlwaysOnCheck.ps1 -ServerName "ServerName" -GroupName "GroupName"
 
 ###########################################################
 # Script Parameters
@@ -21,6 +22,7 @@ Param
 # Script Body 
 ###########################################################
 
+#Import SqlServer module - Ensure the module has been installed on source server
 Import-Module SqlServer
 
 # Connect to the server instance and set default init fields for 
@@ -69,7 +71,7 @@ else
     # If any objects are critical write an error event to the applicaiton log
     if($groupIsCritical -or $criticalReplicas.Count -gt 0 -or $criticalDatabases.Count -gt 0)
     {
-        Write-EventLog -EventId 1501 -LogName Application -Message "SQL-CENTRALUS1 Availability Group is down" -Source "SQLAlwaysOn" -EntryType Error     
+        Write-EventLog -EventId 1501 -LogName Application -Message "SQL-ServerName Availability Group is down" -Source "SQLAlwaysOn" -EntryType Error     
     }
 }
 
