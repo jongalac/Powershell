@@ -1,71 +1,77 @@
+###########################################################
+# Script Body 
+###########################################################
 
 
-$SqlAGCentral = "CentralCTXAG1"
-$SqlAGEast = "EastUS2CTXAG1"
+###########################################################
+# Script Parameters
+###########################################################
 
 
+Param
+(
+    # The name of the server instance that hosts the availability group
+    [Parameter(Mandatory=$true)]
+    [string] $ServerName,
+
+    # Name of the availability group-Serr to monitor
+    [Parameter(Mandatory=$true)]
+    [string] $GroupName
+)
+
+###########################################################
+# Script Body 
+###########################################################
+
+Import-Module SqlServer
+
+# Connect to the server instance and set default init fields for 
+# efficient loading of collections. We use windows authentication here,
+# but this can be changed to use SQL Authentication if required.
+$serverObject = New-Object Microsoft.SqlServer.Management.SMO.Server($ServerName)
+$serverObject.SetDefaultInitFields([Microsoft.SqlServer.Management.Smo.AvailabilityGroup], $true)
+$serverObject.SetDefaultInitFields([Microsoft.SqlServer.Management.Smo.AvailabilityReplica], $true)
+$serverObject.SetDefaultInitFields([Microsoft.SqlServer.Management.Smo.DatabaseReplicaState], $true)
+
+# Attempt to access the availability group object on the server
+$groupObject = $serverObject.AvailabilityGroups[$GroupName]
+
+if($groupObject -eq $null)
+{
+    # Can't find the availability group on the server.
+    throw "The availability group '$GroupName' does not exist on server '$ServerName'."
+}
+elseif($groupObject.PrimaryReplicaServerName -eq $null)
 
 
-[System.Reflection.Assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") |
-
-Out-Null
-
-
-$SqlServerCentral1 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS1")
-
-$SqlServerCentral1.AvailabilityGroups[$SqlAGCentral].AvailabilityReplicas |
-
-  Where-Object {$_.Name -eq $SqlServerCentral1.Name} |
-
-  Select-Object Name,
-
-    #Role,
-
-    #OperationalState,
-
-    ConnectionState
+{
+    # Can't determine the primary server instance. This can be serious (may mean the AG is offline), so throw an error.
+    throw "Cannot determine the primary replica of availability group '$GroupName' from server instance '$ServerName'. Please investigate!" 
+}
 
 
-$SqlServerCentral2 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-CENTRALUS2")
+elseif($groupObject.PrimaryReplicaServerName -ne $ServerName)
+{
+    # We're trying to run the script on a secondary replica, which we shouldn't do.
+    # We'll just throw a warning in this case, however, and skip health evaluation.
+    Write-Warning "The server instance '$ServerName' is not the primary replica for the availability group '$GroupName'. Skipping evaluation."
+}
+else 
+{
+    # Run the health cmdlets
+    $groupResult = Test-SqlAvailabilityGroup $groupObject -NoRefresh
+    $replicaResults = @($groupObject.AvailabilityReplicas | Test-SqlAvailabilityReplica -NoRefresh)
+    $databaseResults = @($groupObject.DatabaseReplicaStates | Test-SqlDatabaseReplicaState -NoRefresh)
+    
+    # Determine if any objects are in the critical state
+    $groupIsCritical = $groupResult.HealthState -eq "Error"
+    $criticalReplicas = @($replicaResults | Where-Object { $_.HealthState -eq "Error" })
+    $criticalDatabases = @($databaseResults | Where-Object { $_.HealthState -eq "Error" })
 
-$SqlServerCentral2.AvailabilityGroups[$SqlAGCentral].AvailabilityReplicas |
+    # If any objects are critical throw an error
+    if($groupIsCritical -or $criticalReplicas.Count -gt 0 -or $criticalDatabases.Count -gt 0)
+    {
+        Write-EventLog -EventId 1501 -LogName Application -Message "SQL-CENTRALUS1 Availability Group is down" -Source "SQLAlwaysOn" -EntryType Error     
+    }
+}
 
-  Where-Object {$_.Name -eq $SqlServerCentral2.Name} |
-
-  Select-Object Name,
-
-    #Role,
-
-    #OperationalState,
-
-    ConnectionState
-
-
-$SqlServerEast1 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-EASTUS2-1")
-
-$SqlServerEast1.AvailabilityGroups["EastUS2CTXAG1"].AvailabilityReplicas |
-
-  Where-Object {$_.Name -eq $SqlServerEast1.Name} |
-
-  Select-Object Name,
-
-    #Role,
-
-    #OperationalState,
-
-    ConnectionState
-
-
-$SqlServerEast2 = New-Object Microsoft.SqlServer.Management.Smo.Server("SQL-EASTUS2-2")
-
-$SqlServerEast2.AvailabilityGroups["EastUS2CTXAG1"].AvailabilityReplicas |
-
-  Where-Object {$_.Name -eq $SqlServerEast2.Name} |
-
-  Select-Object Name,
-
-    #Role,
-
-    #OperationalState,
-
-    ConnectionState
