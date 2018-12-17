@@ -7,16 +7,16 @@
 ###########################################################
 
 
-Param
-(
-    # The name of the server instance that hosts the availability group
-    [Parameter(Mandatory=$true)]
-    [string] $ServerName,
-
-    # Name of the availability group-Serr to monitor
-    [Parameter(Mandatory=$true)]
-    [string] $GroupName
-)
+#Param
+#(
+#    # The name of the server instance that hosts the availability group
+#    [Parameter(Mandatory=$true)]
+#    [string] $ServerName,
+#
+#    # Name of the availability group-Serr to monitor
+#    [Parameter(Mandatory=$true)]
+#    [string] $GroupName
+#)
 
 ###########################################################
 # Script Body 
@@ -24,6 +24,11 @@ Param
 
 #Import SqlServer module - Ensure the module has been installed on source server
 Import-Module SqlServer
+
+#Set server name and availability group name variables 
+
+$ServerName = "EnterServerNameHere"
+$GroupName = "EnterGroupNameHere"
 
 # Connect to the server instance and set default init fields for 
 # efficient loading of collections. We use windows authentication here,
@@ -71,7 +76,7 @@ else
     # If any objects are critical write an error event to the applicaiton log
     if($groupIsCritical -or $criticalReplicas.Count -gt 0 -or $criticalDatabases.Count -gt 0)
     {
-        Write-EventLog -EventId 1501 -LogName Application -Message "SQL-ServerName Availability Group is down" -Source "SQLAlwaysOn" -EntryType Error     
+        Write-EventLog -EventId 1501 -LogName Application -Message "SQL Availability Group is down" -Source "SQLAlwaysOn" -EntryType Error     
     }
 }
 
