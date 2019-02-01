@@ -1,0 +1,478 @@
+# ------------------------------------------------------------------------
+# NAME: CitrixADCMonitoring.ps1
+# VER: 1.0
+#
+#SUMMARY: 
+# This script will collect data from a netscaler device and alert to the event log if values breach selected values
+#
+#REQUIREMENTS:
+# This script requires PowerShell version 3.0 or higher to run.
+#
+#DISCLAIMER: 
+#	Insentra DOES NOT GUARANTEE OR SUPPORT THIS SCRIPT outside its own services.
+#
+#	CUSTOMERS WHO USE THIS SCRIPT ASSUME THE LIABILITY FOR ANY AND ALL
+#	DAMAGES RESULTING FROM ITS USE.
+# ---------------------------------------------------------------------
+
+#####
+# Begin Parameters
+#####
+[CmdletBinding()]
+Param(
+  [Parameter(Mandatory=$False,Position=1)]
+   [string]$LogLoc,
+   
+  [Parameter(Mandatory=$False)]
+   [string]$Logging,
+   
+  [Parameter(Mandatory=$False)]
+   [string]$DetailFiles,
+   
+  [Parameter(Mandatory=$False)]
+   [string]$Silent  
+)   
+#####
+# End Parameters
+#####
+
+#####
+# Begin User Defined Variables
+#####
+
+#declare Netscaler appliance IP(s)
+$netscalerList = ("10.13.121.245","10.13.121.246","10.19.121.245","10.19.121.246")
+
+#set Netscaler user/password (read only access)
+$NSUser = "insentra-monitor"
+$passwordfile = "C:\insentra\netscaler monitoring\cred.txt"
+$KeyFile = "C:\insentra\netscaler monitoring\AES.key"
+$key = Get-Content $KeyFile
+$nspwd = (Get-Content $PasswordFile | ConvertTo-SecureString -Key $key)
+$cred = New-Object System.Management.Automation.PSCredential ($NSUser, $nspwd) 
+$er = $false
+	
+#####
+# End Parameters
+#####
+
+
+#####
+# Begin Functions
+#####
+
+
+    #####
+    # Function: LogWrite (Logging)
+    #####
+    function LogWrite([string]$info)
+    {       
+		if($script:log -eq "True")
+		{           
+		    "$info" >> $logfile
+		}   else  {
+		    Write-Host $info
+		}
+    }           
+
+	#####
+    # Function: NewFile (Logging, Location)
+    #####
+    function NewFile($data, $loc)
+    {  
+		#$SubData = $data.substring(0,10)
+		#LogWrite "Saving Details...($SubData, $loc)"
+		If (test-path $loc) {Remove-Item $loc}
+        "$data" >> $loc  
+		LogWrite "Data saved to $loc"
+    }  
+	
+#####
+# End Functions
+#####
+
+#####
+# Advanced Variables
+#####
+
+	#logging
+	$debug = "True"
+	$logfile = "C:\netscaler monitoring\NetScalerLog.txt"
+	$prepfile = "c:\netscaler monitoring\nsprep.ps1"
+    $script:log = "True"
+	$Dev = "False"
+	
+	#Script
+	$APITimeout = 5 #seconds
+
+
+
+#####
+# Start Script
+#####
+    cls
+    $origFg = $host.ui.rawui.foregroundColor
+	
+	### Delete existing log files
+    If (test-path $logfile) {Remove-Item $logfile}
+
+    ### Cleanup of Prep file
+    If (test-path $prepfile) {Remove-Item $prepfile}
+	
+    ### Force on logging if script is running w/ silent argument
+    If ($Silent) {
+    Write-Progress -Activity "Working..." `
+    -CurrentOperation "Started..." `
+    -Status "Please wait."
+    $Logging = "True"
+    }
+	#LogWrite ""
+	
+	### Start Script
+	#LogWrite ""
+    #LogWrite "Starting Script..."
+
+#####
+# Do Stuff
+#####
+	#Collect Data
+	#$WTIME = (Get-Date).ToUniversalTime()
+$time = Get-Date
+logwrite $time
+
+#check HA status
+logwrite "*****OVERALL HA Status*****"
+foreach ($netscaler in $netscalerList) {
+
+	
+    Try { 
+        $data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/hanode/ -Credential $cred -TimeoutSec $APITimeout
+        $haData = $data | select -ExpandProperty hanode
+    }
+    Catch {
+        $Message = $_.Exception.Message
+        LogWrite "Error connecting to API: hanode"
+        LogWrite "Error: $Message"
+        $er = $true
+    }
+
+  
+    $hastatus = $netscaler + "- Node role: " +$hadata.hacurmasterstate +" Current state: " + $haData.hacurstate + " Last transition time: " + $haData.transtime
+    logwrite "$hastatus"
+    if ($haData.hacurmasterstate -eq "Primary") {
+        $nodes = $netscaler
+    }
+    if ($hadata.hacurstate -ne "UP") {
+        Write-EventLog -EventId 1500 -LogName Application -Message "CustomerName Netcaler alert -- $hastatus" -Source NSNitro -EntryType Error
+    }
+
+}
+
+	foreach ($netscaler in $netscalerList) {
+		logwrite `n`n
+        LogWrite "Working on primarey node: $netscaler`n"
+
+		Write-host "Working on primarey node: $netscaler"
+		
+		#documentation can be found \\lsifs\Install\citrix\Netscaler\Netscaler SDK\html\stat
+
+ 
+		Try { 
+			$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/aaa/ -Credential $cred -TimeoutSec $APITimeout
+			$aaaData = $data | select -ExpandProperty aaa
+			
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: aaa"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/system/ -Credential $cred -TimeoutSec $APITimeout
+		$sysData = $data | select -ExpandProperty system
+		#LogWrite "Successfully connected to API: system"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: system"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/service/ -Credential $cred -TimeoutSec $APITimeout
+		$serviceData = $data | select -ExpandProperty service
+		#LogWrite "Successfully connected to API: service"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: service"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/interface/ -Credential $cred -TimeoutSec $APITimeout
+		$interfaceData = $data | select -ExpandProperty interface
+		#LogWrite "Successfully connected to API: interface"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: interface"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/protocoltcp/ -Credential $cred -TimeoutSec $APITimeout
+		$tcpData = $data | select -ExpandProperty protocoltcp
+		#LogWrite "Successfully connected to API: protocoltcp"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: protocoltcp"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/protocolip/ -Credential $cred -TimeoutSec $APITimeout
+		$ipData = $data | select -ExpandProperty protocolip
+		#LogWrite "Successfully connected to API: protocolip"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: protocolip"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/protocolhttp/ -Credential $cred -TimeoutSec $APITimeout
+		$httpData = $data | select -ExpandProperty protocolhttp
+		#LogWrite "Successfully connected to API: protocolhttp"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: protocolhttp"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+
+
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/config/sslcertkey/ -Credential $cred -TimeoutSec $APITimeout
+		$sslData = $data.sslcertkey
+		#LogWrite "Successfully connected to API: SSl Certs"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: protocolhttp"
+			LogWrite "Error: $Message"
+			$er = $true
+		} 
+		
+		Try { 
+		$data = Invoke-RestMethod -Uri http://$netscaler/nitro/v1/stat/lbvserver/ -Credential $cred -TimeoutSec $APITimeout
+		$lbData = $data | select -ExpandProperty lbvserver
+		#LogWrite "Successfully connected to API: lbvserver"
+		}
+		Catch {
+			$Message = $_.Exception.Message
+			LogWrite "Error connecting to API: lbvserver"
+			LogWrite "Error: $Message"
+			$er = $true
+		}
+		
+		$Device = $netscaler
+		# Service Arguments are arrays
+		$ServiceName = @()
+		$ServiceState = @()
+		$ServiceRequests = @()
+		
+		If ($er -eq $false) {
+		$UpSince = $sysData.starttime
+		$ServiceName = $serviceData.name
+		$ServiceState = $serviceData.state
+		$ServiceRequests = $serviceData.totalrequests
+		$PacketCpuPct = $sysData.pktcpuusagepcnt
+		$MgmtCpuPct = $sysData.mgmtcpuusagepcnt
+		$MemUsePct = $sysData.memusagepcnt
+		$DiskUsePct = $sysData.disk1perusage
+		$MemUseMB = $sysData.memuseinmb
+		$AAASessCount = $aaaData.aaacursessions	
+		$AAAAuthFail = $aaaData.aaaauthfail
+		$AAAAuthSuccess = $aaaData.aaaauthsuccess
+		$AAAHTTPFail =  $aaaData.aaaauthonlyhttpfail
+		$AAAHTTPSuccess = $aaaData.aaaauthonlyhttpsuccess
+		$AAANonHTTPFail = $aaaData.aaaauthnonhttpfail
+		$AAANonHTTPSuccess = $aaaData.aaaauthnonhttpsuccess
+		$IPInMbps = $ipData.iprxmbitsrate
+		$IPOutMbps = $ipData.iptxmbitsrate
+		$IPTotalRxMBits = $ipData.iptotrxmbits
+		$IPTotalTxMBits = $ipData.iptottxmbits
+		$TCPClientConnOpen = $tcpData.tcptotclientconnopened
+		$TCPServerConnOpen =  $tcpData.tcptotserverconnopened
+		$TCPClientConnClose = $tcpData.tcpcurclientconnclosing
+		$TCPServerConnClose = $tcpData.tcpcurserverconnclosing
+		$TCPClientConn = $tcpData.tcpcurclientconn
+		$TCPServerConn = $tcpData.tcpcurserverconn
+		$TCPEstabClientConn = $tcpData.tcpcurclientconnestablished
+		$TCPEstabServerConn = $tcpData.tcpcurserverconnestablished
+		$HTTPTotalRequests = $httpData.httptotrequests
+		$HTTPRequestRate = $httpData.httprequestsrate
+		$HTTPTotalResponse = $httpData.httptotresponses
+		$HTTPResponseRate = $httpData.httpresponsesrate
+		$HTTPRequestTotalByte = $httpData.httptotrxrequestbytes
+		$HTTPRequestByteRate = $httpData.httprxrequestbytesrate
+		$HTTPResponseTotalByte = $httpData.httptotrxresponsebytes
+		$HTTPResponseByteRate = $httpData.httptxresponsebytesrate
+        $VPNvServer = $vpnData.name
+		$VPNvServerStatus = $vpnData.state
+		$STAConFail = $vpnData.staconnfailure
+		$CPSConFail = $vpnData.cpsconnfailure
+
+		If ($debug = "True") {
+			LogWrite "*****Hardware information*****`n"
+			#LogWrite "     WTIME : $WTIME"
+			LogWrite "Up Since :  $UpSince"
+        	#LogWrite "     Load balancing Server Name: $ServiceName"
+			#LogWrite "     Load balancing Server state: $ServiceState"
+			#LogWrite "     Service Requests: $ServiceRequests"
+			LogWrite "Packet CPU Percentage:   $PacketCpuPct"
+                if ($PacketCpuPct -gt 85) {
+                    Write-EventLog -EventId 1500 -LogName Application -Message "Citrix Netscaler ADC Alert-- Packet CPU Percentage: $PacketCpuPct" -Source NSNitro -EntryType Warning
+                }
+			LogWrite "Management CPU Percentage:   $MgmtCpuPct"
+                if ($MgmtCpuPct -gt 85) {
+                    Write-EventLog -EventId 1500 -LogName Application -Message "Citrix Netscaler ADC Alert-- Packet CPU Percentage: $MgmtCpuPct" -Source NSNitro -EntryType Warning
+                }
+			LogWrite "Memory Usage Percentage:   $MemUsePct"
+                if ($MemUsePct -gt 85) {
+                    Write-EventLog -EventId 1500 -LogName Application -Message "Citrix Netscaler ADC Alert-- Packet CPU Percentage: $MemUsePct" -Source NSNitro -EntryType Warning
+                }
+			LogWrite "Disk Usage %:   $DiskUsePct"
+
+                if ($DiskUsePct -gt 85) {
+                    Write-EventLog -EventId 1500 -LogName Application -Message "Citrix Netscaler ADC Alert -- Disk Usage %: $DiskUsePct" -Source NSNitro -EntryType Warning
+                }
+			LogWrite "Memory Usage (MB):   $MemUseMB"
+            logwrite""
+
+            LogWrite "*****SSL Certificates information*****"
+            foreach ($sslcert in $sslData) {
+            $sslcertinfo ="SSL Certificate: " + $sslcert.certkey + " status: " + $sslcert.status + " Days to expiration: " + $sslcert.daystoexpiration
+            logwrite "$sslcertinfo"
+           
+            if ($sslcert.daystoexpiration -lt 60) {
+                   Write-EventLog -EventId 1500 -LogName Application -Message "CustomerName Netcaler alert -- Certificate about to expire: $sslcertinfo" -Source NSNitro -EntryType Warning
+                }
+            
+            #$vpnserver=$null
+            }
+            logwrite""
+            LogWrite "*****Virtual servers information*****"
+
+            foreach ($lbvServer in $lbData) {
+                if ($lbvServer.name -notlike '*1024') {
+                    $lbinfo =  "name:" + $lbvServer.name + " IP Address:" + $lbvServer.primaryipaddress + " Type:" + $lbvServer.type + " state:" + $lbvServer.state
+                    LogWrite "$lbinfo"
+                    if ($lbvServer.state -ne "up") {
+                    Write-EventLog -EventId 1500 -LogName Application -Message "CustomerName Netcaler alert -- $lbinfo" -Source NSNitro -EntryType Error
+                    }
+                    $lbvServer = $null
+                    $lbinfo = $null
+                }
+            }
+
+
+		<#	foreach ($lbsrvr in $Servicedata) {
+                if ($lbsrvr.name -notlike "*internal*"){
+                        $lbsrvr = "     Load balancing Server Name: " + $lbsrvr.name + " State: " + $lbsrvr.state
+                        logwrite "$lbsrvr"
+                        $lbsrvr = $null
+                }
+            }
+            #>
+            foreach ($vpnserver in $VPNdata) {
+            $vpnserver ="VPN Virtual server: " + $vpnserver.name + " state: " + $vpnserver.state
+            logwrite "$vpnserver"
+            $vpnserver=$null
+            }
+            #logwrite "     VPN Virtual server: $VPNvServer"
+            #logwrite "     VPN Virtual server state: $VPNvServerStatus"
+
+
+			#write-host "`t Interface: " $interfaceData.
+			#write-host "`t TCP: " $tcpData.
+			#write-host "`t IP: " $ipData.
+			#write-host "`t HTTP: " $httpData.
+			#write-host "`t VPN: " $vpnData.
+			#LogWrite "     ICA Licnese Failure: " $ICALicFail
+			#LogWrite "     ICA License Fail/Rate: " $ICALicFailRate
+			#LogWrite "     STA Connection Failure: " $STAConFail 
+			#LogWrite "     CPS Connection Failure: " $CPSConFail
+
+			}
+			
+			# Clear Variables
+			$Device = $null
+			$UpSince = $null
+			$ServiceName = $null
+			$ServiceState = $null
+			$ServiceRequests = $null
+			$PacketCpuPct = $null
+			$MgmtCpuPct = $null
+			$MemUsePct = $null
+			$DiskUsePct = $null
+			$MemUseMB = $null
+			$AAASessCount = $null
+			$AAAAuthFail = $null
+			$AAAAuthSuccess = $null
+			$AAAHTTPFail = $null
+			$AAAHTTPSuccess = $null
+			$AAANonHTTPFail = $null
+			$AAANonHTTPSuccess = $null
+			$IPInMbps = $null
+			$IPOutMbps = $null
+			$IPTotalRxMBits = $null
+			$IPTotalTxMBits = $null
+			$TCPClientConnOpen = $null
+			$TCPServerConnOpen =  $null
+			$TCPClientConnClose = $null
+			$TCPServerConnClose = $null
+			$TCPClientConn = $null
+			$TCPServerConn = $null
+			$TCPEstabClientConn = $null
+			$TCPEstabServerConn = $null
+			$HTTPTotalRequests = $null
+			$HTTPRequestRate = $null
+			$HTTPTotalResponse = $null
+			$HTTPResponseRate = $null
+			$HTTPRequestTotalByte = $null
+			$HTTPRequestByteRate = $null
+			$HTTPResponseTotalByte = $null
+			$HTTPResponseByteRate = $null
+			$ICALicFail = $null
+			$ICALicFailRate = $null
+			$STAConFail = $null
+			$CPSConFail = $null
+	
+	} # Next Netscaler
+	
+}
+	
+#####
+# Exit Script
+#####
+    
+    ### Cleanup
+    If ($Silent) {
+        Write-Progress -Activity "Working..." `
+        -Completed -Status "All done."
+    }
+    #LogWrite "Exiting Script..."
+	#LogWrite ""
+    Exit
